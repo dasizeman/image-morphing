@@ -22,10 +22,25 @@ def intermediate_points(pts1, pts2, fraction):
     point sets."""
 
     # Compute and return the intermediate point set.
+    intermediate_rows = np.zeros(pts1.shape[0])
+    intermediate_cols = np.zeros(pts1.shape[1])
+    
+    pts1_rows = pts1[...,0]
+    pts1_cols = pts1[...,1]
+    pts2_rows = pts2[...,0]
+    pts2_cols = pts2[...,1]
+
+    intermediate_rows = ((1-fraction) * pts1_rows) + (fraction * pts2_rows) 
+    intermediate_cols = ((1-fraction) * pts1_cols) + (fraction * pts2_cols)
+
+    return np.dstack((intermediate_rows, intermediate_cols))
+
+    
 
 def blend(img1, img2, fraction):
     """Blend between img1 and img2 based on the given fraction."""
     # Compute and return the blended image.
+    return ((1-fraction) * img1) + (fraction * img2)
 
 def barycentric(points, query):
     """Compute the barycentric coordinates for a query point within the given
@@ -33,24 +48,45 @@ def barycentric(points, query):
 
     # Form the matrix A containing the triangle points and 1s in the proper
     # positions.
+    A = np.insert(points, points.shape[1], 1, axis=1)
+    A = np.transpose(A)
 
     # Create the vector b containing the query coordinates as well as a 1.
+    b = np.append(query,1)
+
 
     # Solve the linear system Ax = b for the barycentric coordinates x.
     # HINT: Look at numpy.linalg.solve.
+    return np.linalg.solve(A,b)
 
 def bilinear_interp(image, point):
     """Perform bilinearly-interpolated color lookup in a given image at a given
     point."""
-    # Compute the four integer corner coordinates for interpolation.
 
-    # Compute the fractional part of the point coordinates.
+    # Determine row and column values of surrounding pixels
+    r1 = np.floor(point[0])
+    r2 = r1 + 1
+    c1 = np.floor(point[1])
+    c2 = c1 + 1
 
-    # Interpolate between the top two pixels.
+    # Store BGR values at these points
+    intensity_tl = image[r1,c1]
+    intensity_bl = image[r2,c1]
+    intensity_tr = image[r1,c2]
+    intensity_br = image[r2,c2]
 
-    # Interpolate between the bottom two pixels.
+    # Compute weights
+    weight_tl = (point[0] - r1) * (point[1] - c1)
+    weight_bl = (r2 - point[0]) * (point[1] - c1)
+    weight_tr = (point[0] - r1) * (c2 - point[1])
+    weight_br = (r2 - point[0]) * (c2 - point[1])
 
-    # Return the result of the final interpolation between top and bottom.
+    return ((intensity_tl * weight_tl) +
+            (intensity_bl * weight_bl) +
+            (intensity_tr * weight_tr) +
+            (intensity_br * weight_br))
+
+
 
 def warp(source, source_points, dest_triangulation):
     """Warp the source image so that its correspondences match the destination
@@ -98,10 +134,10 @@ def morph(img1, img2, pts1, pts2, fraction):
 
     # Compute the intermediate points between the points of the first and
     # second triangulations according to the warp fraction.
-    intermediate_pts = 
+    intermediate_pts = intermediate_points(pts1, pts2, fraction) 
 
     # Compute the triangulation for the intermediate points.
-    intermediate_triang =
+    intermediate_triang = Delaunay(intermediate_pts)
 
     # Warp the first image to the intermediate triangulation.
     warp1 =
