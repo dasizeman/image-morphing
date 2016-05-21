@@ -8,11 +8,6 @@ import numpy as np
 from scipy.misc import imread, imsave
 from scipy.spatial import Delaunay
 
-import ipdb
-
-#########################################
-###########    Skeleton    ##############
-#########################################
 
 def intermediate_points(pts1, pts2, fraction):
     """Computes the intermediate point set for a given set of correspondence
@@ -146,8 +141,6 @@ def warp(source, source_points,dest_points,dest_triangulation):
 
     for r in range(result.shape[0]):
         for c in range(result.shape[1]):
-            #if r == 0 and c == 198:
-                #ipdb.set_trace()
             # Find the triangle index (look at Delaunay.find_simplex) for the
             # current point in the destination triangulation, then use it to
             # get the points of the destination triangle.
