@@ -8,6 +8,8 @@ import numpy as np
 from scipy.misc import imread, imsave
 from scipy.spatial import Delaunay
 
+import ipdb
+
 #########################################
 ###########    Skeleton    ##############
 #########################################
@@ -33,7 +35,7 @@ def intermediate_points(pts1, pts2, fraction):
     intermediate_rows = ((1-fraction) * pts1_rows) + (fraction * pts2_rows) 
     intermediate_cols = ((1-fraction) * pts1_cols) + (fraction * pts2_cols)
 
-    return np.dstack((intermediate_rows, intermediate_cols))
+    return np.stack((intermediate_rows, intermediate_cols), axis=1)
 
     
 
@@ -63,11 +65,23 @@ def bilinear_interp(image, point):
     """Perform bilinearly-interpolated color lookup in a given image at a given
     point."""
 
+    # Bring negative values up to zero
+    if point[0] < 0:
+        point[0] = 0
+    if point[1] < 0:
+        point[1] = 0
+
     # Determine row and column values of surrounding pixels
-    r1 = np.floor(point[0])
+    r1 = np.floor(point[0]).astype(np.int32)
     r2 = r1 + 1
-    c1 = np.floor(point[1])
+    c1 = np.floor(point[1]).astype(np.int32)
     c2 = c1 + 1
+
+    # Make sure all values are within range
+    r1 = np.clip(r1, 0, image.shape[0]-1)
+    r2 = np.clip(r2, 0, image.shape[0]-1)
+    c1 = np.clip(c1, 0, image.shape[1]-1)
+    c2 = np.clip(c2, 0, image.shape[1]-1)
 
     # Store BGR values at these points
     intensity_tl = image[r1,c1]
@@ -75,20 +89,43 @@ def bilinear_interp(image, point):
     intensity_tr = image[r1,c2]
     intensity_br = image[r2,c2]
 
-    # Compute weights
+    # Compute weights, handle edge cases
+
+    # Bottom right corner
+    if r1 == image.shape[0]-1 and c1 == image.shape[1]-1:
+        return image[r1,c1]
+
+    # For the rightmost column, only interpolate top and bottom
+    if c1 == image.shape[1]-1:
+        weight_top = point[0] - r1
+        weight_bottom = 1 - weight_top
+        intensity_top = image[r1, c1]
+        intensity_bottom = image[r1+1, c1]
+
+        return (intensity_top * weight_top) + (intensity_bottom * weight_bottom)
+
+    # For bottommost row, only interpolate left and right
+    if r1 == image.shape[0]-1:
+        weight_left = point[1] - c1
+        weight_right = 1 - weight_left
+        intensity_left = image[r1,c1]
+        intensity_right = image[r1, c1+1]
+
+        return (intensity_left * weight_left) + (intensity_right * weight_right)
+
     weight_tl = (point[0] - r1) * (point[1] - c1)
     weight_bl = (r2 - point[0]) * (point[1] - c1)
     weight_tr = (point[0] - r1) * (c2 - point[1])
     weight_br = (r2 - point[0]) * (c2 - point[1])
 
-    return ((intensity_tl * weight_tl) +
-            (intensity_bl * weight_bl) +
-            (intensity_tr * weight_tr) +
-            (intensity_br * weight_br))
+    return ((intensity_tl * weight_br) +
+            (intensity_bl * weight_tr) +
+            (intensity_tr * weight_bl) +
+            (intensity_br * weight_tl))
 
 
 
-def warp(source, source_points, dest_triangulation):
+def warp(source, source_points,dest_points,dest_triangulation):
     """Warp the source image so that its correspondences match the destination
     triangulation."""
     result = np.zeros_like(source)
@@ -109,23 +146,34 @@ def warp(source, source_points, dest_triangulation):
 
     for r in range(result.shape[0]):
         for c in range(result.shape[1]):
+            #if r == 0 and c == 198:
+                #ipdb.set_trace()
             # Find the triangle index (look at Delaunay.find_simplex) for the
             # current point in the destination triangulation, then use it to
             # get the points of the destination triangle.
+            triangle_idx = dest_triangulation.find_simplex(np.array([(r,c)]))[0]
 
             # Get the indices for the points of the destination triangle
             # (Delaunay.simplices) and use them to get the corresponding points
             # for the source triangle.
+            idxs = dest_triangulation.simplices[triangle_idx]
+
+            src_triangle_pts = source_points[idxs]
+            dest_triangle_pts = dest_points[idxs]
 
             # Compute the barycentric coordinates for the current destination
             # point using the destination triangle's points.
+            b_coords = barycentric(dest_triangle_pts, np.array([r,c]))
 
             # Compute the sum of the source points weighted by the barycentric
             # coordinates from the destination triangle.
+            point = ((b_coords[0] * src_triangle_pts[0]) +
+                     (b_coords[1] * src_triangle_pts[1]) +
+                     (b_coords[2] * src_triangle_pts[2]))
 
             # Get the resulting color from the source image via bilinear
             # interpolation, and place it in the result image.
-            result[r, c] = 
+            result[r, c] = bilinear_interp(source, point)
     return result
 
 def morph(img1, img2, pts1, pts2, fraction):
@@ -136,17 +184,18 @@ def morph(img1, img2, pts1, pts2, fraction):
     # second triangulations according to the warp fraction.
     intermediate_pts = intermediate_points(pts1, pts2, fraction) 
 
+
     # Compute the triangulation for the intermediate points.
     intermediate_triang = Delaunay(intermediate_pts)
 
     # Warp the first image to the intermediate triangulation.
-    warp1 =
+    warp1 = warp(img1, pts1, intermediate_pts, intermediate_triang)
 
     # Warp the second image to the intermediate triangulation.
-    warp2 =
+    warp2 = warp(img2, pts2, intermediate_pts, intermediate_triang)
 
     # Blend the two warped images according to the warp fraction.
-    result =
+    result = blend(warp1, warp2, fraction)
 
     return result
 
